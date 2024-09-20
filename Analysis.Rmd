@@ -1,0 +1,331 @@
+---
+title: "Q1."
+author: "Salman"
+date: "2024-04-06"
+output: word_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(did)
+library(fixest)
+library(bacondecomp)
+library(ggplot2)
+library(foreign)
+library(haven)
+library(dplyr)
+library(tidyverse)
+file_path <- "E:/job_displacement_data.dta"
+
+
+data <- read_dta(file_path)
+
+# Generate treatment dummy
+data$treated <- ifelse(data$year >= data$group & data$group != 0, 1, 0)
+
+# Two-way fixed effects model
+twfe_model <- feols(income ~ treated | id + year, data = data)
+
+# Print summary 
+summary(twfe_model)
+
+# Create interaction terms manually between 'treated' and 'year'
+data$interaction <- interaction(data$treated, data$year)
+
+# Estimating the model with interaction terms to see the effect over time
+model_interaction <- feols(income ~ interaction + female + white + occ_score | id + year, data = data)
+
+# Viewing the summary to interpret interaction effects
+summary(model_interaction)
+
+# Extract estimates and confidence intervals directly from the two-way fixed effects model
+estimates <- coef(twfe_model)
+cis <- confint(twfe_model)
+
+
+# Adjust this part according to what you actually intend to plot
+plot_data <- data.frame(
+  id = names(estimates),
+  estimate = estimates,
+  ci_lower = cis[, 1],
+  ci_upper = cis[, 2]
+)
+
+plot_data$id <- factor(plot_data$id, levels = unique(plot_data$id))
+
+# Plotting
+ggplot(plot_data, aes(x = id, y = estimate, group = 1)) +
+  geom_line() +
+  geom_point() +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), fill = "blue", alpha = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  scale_x_discrete(name = "ID") +
+  ylab("Effect on Income") +
+  ggtitle("Plot Title: Adjust Accordingly") +
+  theme_minimal()
+
+
+---
+title: "Q2"
+author: "Salman"
+date: "2024-04-06"
+output: word_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(did)
+library(fixest)
+library(bacondecomp)
+library(ggplot2)
+library(foreign)
+library(haven)
+library(dplyr)
+library(tidyverse)
+library(plm)
+
+file_path <- "E:/job_displacement_data.dta"
+
+data <- read_dta(file_path)
+
+att_gt_out <- att_gt(
+  yname = "income",  
+  tname = "year",   
+  idname = "id",     
+  gname = "group",   
+  data = data       
+)
+
+summary(att_gt_out)
+
+print(att_gt_out$att)
+
+att_gt_out <- att_gt(data = data, 
+                     yname = "income",
+                     tname = "year",    
+                     idname = "id",     
+                     gname = "group")
+
+agg_effects <- aggte(att_gt_out, type = "dynamic")
+
+str(agg_effects)
+
+# Plotting
+plot(agg_effects$egt, agg_effects$att.egt, type = "b", 
+     xlab = "Event Time", ylab = "Estimated Treatment Effect",
+     main = "Event Study Analysis", ylim = c(min(agg_effects$att.egt - agg_effects$se.egt*1.96), 
+                                             max(agg_effects$att.egt + agg_effects$se.egt*1.96)))
+
+# Add error bars
+lower_bounds <- agg_effects$att.egt - 1.96 * agg_effects$se.egt
+upper_bounds <- agg_effects$att.egt + 1.96 * agg_effects$se.egt
+
+for(i in 1:length(agg_effects$egt)) {
+  segments(agg_effects$egt[i], lower_bounds[i], agg_effects$egt[i], upper_bounds[i])
+}
+
+
+overall_effect <- aggte(att_gt_out, type = "simple")
+
+print(overall_effect)
+
+
+---
+title: "Q3"
+author: "Salman"
+date: "2024-04-06"
+output: word_document
+---
+
+```{r}
+
+library(fixest)
+library(ggplot2)
+library(haven)
+library(did)
+
+file_path <- "E:/job_displacement_data.dta"
+
+# Reading the dataset with haven
+data <- read_dta(file_path)
+
+# Adjusting for anticipated treatment effect
+data$anticipated_treatment <- ifelse(data$year >= data$group - 1 & data$group > 0, 1, 0)
+
+# Adjust the group variable for anticipation
+data$group_anticipate <- ifelse(data$group > 0, data$group - 1, 0)
+
+# Using att_gt from the did package
+att_gt_out_anticipate <- att_gt(yname = "income", tname = "year", idname = "id", 
+                                gname = "group_anticipate", data = data)
+
+# Aggregate to get a simple overall treatment effect
+overall_effect_anticipate <- aggte(att_gt_out_anticipate, type = "simple")
+print(overall_effect_anticipate)
+
+overall_att <- overall_effect_anticipate$overall.att
+overall_se <- overall_effect_anticipate$overall.se
+
+# Calculating the confidence interval
+ci_lower <- overall_att - 1.96 * overall_se
+ci_upper <- overall_att + 1.96 * overall_se
+
+# Prepare data for plotting
+plot_data <- data.frame(att = overall_att, ci_lower = ci_lower, ci_upper = ci_upper)
+
+ggplot(plot_data, aes(x = factor(1), y = att)) +
+  geom_col() +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.2) +
+  xlab("Overall Treatment Effect") + ylab("ATT") +
+  ggtitle("Overall Treatment Effect with Confidence Interval") +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+
+---
+title: "Q4"
+author: "Salman"
+date: "2024-04-06"
+output: word_document
+---
+
+```{r}
+
+library(did)
+library(foreign)
+library(haven)
+
+
+#PART A
+
+file_path <- "E:/job_displacement_data.dta"
+
+data <- read_dta("E:/job_displacement_data.dta")
+
+
+data$group_anticipate <- ifelse(data$group > 0, data$group - 1, 0)
+
+
+att_gt_out <- att_gt(
+  yname = "income",
+  tname = "year",
+  idname = "id",
+  gname = "group_anticipate", 
+  xformla = ~ female + white, 
+  data = data,
+  est_method = "dr"           
+)
+
+
+summary(att_gt_out)
+
+
+
+
+
+
+# Extract the group-time ATTs from the att_gt object
+group_time_atts <- att_gt_out$group.time.atts
+
+
+att_1992_1992 <- group_time_atts[(group_time_atts$g == 1991) & (group_time_atts$t == 1992), ]
+
+# Print out the ATT for the year 1992,1992 accounting for anticipation
+print(att_1992_1992$att)
+
+
+
+
+agg_effects <- aggte(att_gt_out, type = "dynamic")
+
+
+plot(agg_effects$egt, agg_effects$att.egt, type = "b",
+     xlab = "Event Time", ylab = "ATT",
+     main = "Event Study Analysis with Anticipation and Covariates")
+
+# Adding error bars
+for (i in 1:length(agg_effects$egt)) {
+  segments(agg_effects$egt[i], 
+           agg_effects$att.egt[i] - 1.96 * agg_effects$se.egt[i], 
+           agg_effects$egt[i], 
+           agg_effects$att.egt[i] + 1.96 * agg_effects$se.egt[i])
+}
+
+
+#PART B
+
+# Using the doubly robust approach including 'female' and 'white' as covariates
+att_dr <- att_gt(
+  data = data, 
+  yname = "income", 
+  tname = "year", 
+  idname = "id", 
+  gname = "group_anticipate", 
+  xformla = ~ female + white,
+  est_method = "dr"
+)
+summary(att_dr)
+
+# Using the outcome regression approach
+att_reg <- update(att_dr, est_method = "reg")
+summary(att_reg)
+
+# Using the inverse propensity score weighting approach
+att_ipw <- update(att_dr, est_method = "ipw")
+summary(att_ipw)
+
+
+
+---
+title: "Q5"
+author: "Salman"
+date: "2024-04-06"
+output: word_document
+---
+
+```{r}
+library(fixest)
+library(ggplot2)
+library(did)
+library(haven)
+
+file_path <- "E:/job_displacement_data.dta"
+data <- read_dta(file_path)
+
+data$treated <- ifelse(data$year >= data$group - 1 & data$group != 0, 1, 0)
+
+model_twfe_occ <- feols(income ~ treated * occ_score | id + year, data = data)
+summary(model_twfe_occ)
+
+data$interaction_year <- interaction(data$treated, data$year)
+data$interaction_occ_score <- data$treated * data$occ_score
+
+model_interaction <- feols(income ~ interaction_year + interaction_occ_score + treated + occ_score | id + year, data = data)
+summary(model_interaction)
+
+estimates <- coef(model_interaction)
+cis <- confint(model_interaction)
+
+event_times <- names(estimates)[grepl("interaction_year", names(estimates))]
+
+plot_data <- data.frame(
+  time = as.numeric(gsub("interaction_year", "", event_times)),
+  estimate = estimates[event_times],
+  ci_lower = cis[event_times, 1],
+  ci_upper = cis[event_times, 2]
+)
+
+plot_data$time <- factor(plot_data$time, levels = unique(plot_data$time))
+
+ggplot(plot_data, aes(x = time, y = estimate, group = 1)) +
+  geom_line() +
+  geom_point() +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), fill = "blue", alpha = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  scale_x_discrete(name = "Years Relative to Displacement") +
+  ylab("Effect on Income with Occupation Score") +
+  ggtitle("Event Study Plot: Impact of Job Displacement on Income") +
+  theme_minimal()
+
+
